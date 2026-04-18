@@ -1,10 +1,11 @@
 /**
  * Eli's Warning Visualizer
- * Role: Environmental Logic Controller (Sand-in-Front Edition)
+ * Role: Master Environmental Controller (Platinum Edition)
+ * Includes: Chaotic Fire, Clean Transitions, and Full Physics Restoration
  */
 
 let song, fft, bgImg, hourglassImg, maskImg;
-let sandGfx, maskGfx, topSandGfx; 
+let sandGfx, maskGfx, topSandGfx, shadowGfx; 
 let houseImages = [];
 let startButton;
 let isStarted = false;
@@ -18,6 +19,16 @@ const MAX_LINGERING = 3000;
 // --- Top Sand ---
 let topParticles = [];
 const TOTAL_TOP_PARTICLES = 5000; 
+
+// Helper for truly organic, unpredictable fire flares
+function getOrganicFireAlpha(zoneId) {
+    let s1 = sin(millis() * 0.0011 + (zoneId * 50));
+    let s2 = sin(millis() * 0.0007 - (zoneId * 120));
+    let combined = (s1 + s2) / 2;
+    return map(combined, 0.35, 0.8, 0, 1, true);
+}
+
+// --- PHYSICS CLASSES ---
 
 class Sand {
     constructor(x, y) {
@@ -80,6 +91,8 @@ class TopGrain {
     }
 }
 
+// --- CORE SYSTEM ---
+
 function preload() {
     song = loadSound("Eli's Warning.wav");
     bgImg = loadImage("Assets/background.png");
@@ -93,6 +106,7 @@ function setup() {
     canvas.parent(document.body);
     fft = new p5.FFT(0.8, 512);
     sandGfx = createGraphics(1280, 720);
+    shadowGfx = createGraphics(1280, 720); 
     maskGfx = createGraphics(1280, 720);
     topSandGfx = createGraphics(1280, 720);
 
@@ -103,7 +117,7 @@ function setup() {
     startButton = select('#start-button');
     startButton.mousePressed(startExperience);
     imageMode(CENTER);
-    [sandGfx, maskGfx, topSandGfx].forEach(g => g.imageMode(CENTER));
+    [sandGfx, maskGfx, topSandGfx, shadowGfx].forEach(g => g.imageMode(CENTER));
 }
 
 function startExperience() {
@@ -130,7 +144,8 @@ function draw() {
     let houseIndex = floor(progress * 4);
     houseIndex = constrain(houseIndex, 0, 3);
     let nextHouseIndex = min(houseIndex + 1, 3);
-    let transitionProgress = map(progress % 0.25, 0.25 - transitionWindow, 0.25, 0, 255, true);
+    let qProg = progress % 0.25;
+    let transitionProgress = map(qProg, 0.25 - transitionWindow, 0.25, 0, 255, true);
 
     let globalZoom = 1.0;
     let peakZoom = 2.6;
@@ -150,10 +165,11 @@ function draw() {
 
     // 2. Buffers
     sandGfx.clear();
+    shadowGfx.clear();
     topSandGfx.clear();
     maskGfx.clear();
     
-    [sandGfx, topSandGfx, maskGfx].forEach(g => {
+    [sandGfx, topSandGfx, maskGfx, shadowGfx].forEach(g => {
         g.push();
         g.translate(width/2 + camXShift, height/2);
         g.rotate(camTilt);
@@ -162,7 +178,7 @@ function draw() {
     });
 
     // BOTTOM SAND
-    let currentPileHeight = progress * 55; // Slightly lowered to preserve house visibility
+    let currentPileHeight = progress * 55; 
     if (particles.length < MAX_PARTICLES) {
         let spawnRate = floor(map(bass, 0, 255, 4, 15));
         for(let i=0; i<spawnRate; i++) particles.push(new Sand(random(-0.8, 0.8), -105)); 
@@ -170,6 +186,7 @@ function draw() {
     for (let i = particles.length - 1; i >= 0; i--) {
         let collided = particles[i].update(currentPileHeight);
         particles[i].display(sandGfx);
+        particles[i].display(shadowGfx); 
         if (particles[i].dead) {
             if (collided && random() < 0.6 && lingeringGrains.length < MAX_LINGERING) {
                 lingeringGrains.push(new LingeringGrain(particles[i].pos.x + random(-2, 2), particles[i].pos.y - 1, particles[i].shade));
@@ -180,13 +197,12 @@ function draw() {
     for (let i = lingeringGrains.length - 1; i >= 0; i--) {
         lingeringGrains[i].update();
         lingeringGrains[i].display(sandGfx);
+        lingeringGrains[i].display(shadowGfx); 
         if (lingeringGrains[i].alpha <= 0) lingeringGrains.splice(i, 1);
     }
     
-    // SOLID PILE
     sandGfx.noStroke(); sandGfx.fill(130, 105, 75); 
-    sandGfx.beginShape(); 
-    sandGfx.vertex(-55, 62); 
+    sandGfx.beginShape(); sandGfx.vertex(-55, 62); 
     sandGfx.bezierVertex(-35, 62 - currentPileHeight * 1.3, 35, 62 - currentPileHeight * 1.3, 55, 62);
     sandGfx.endShape(CLOSE);
 
@@ -201,12 +217,14 @@ function draw() {
     topSandGfx.fill(0, 30); topSandGfx.rect(-65, blockTop, -50, min(blockBottom, -105)); topSandGfx.rect(50, blockTop, 65, min(blockBottom, -105));
 
     maskGfx.image(maskImg, 0, 0);
-    [sandGfx, topSandGfx, maskGfx].forEach(g => g.pop());
+    [sandGfx, topSandGfx, maskGfx, shadowGfx].forEach(g => g.pop());
 
     let sandImg = sandGfx.get();
+    let shadowImg = shadowGfx.get();
     let topImg = topSandGfx.get();
     let commonMask = maskGfx.get();
     sandImg.mask(commonMask);
+    shadowImg.mask(commonMask);
     topImg.mask(commonMask);
 
     // 3. Main Rendering
@@ -219,15 +237,49 @@ function draw() {
     push(); translate(shadowX, shadowY); shearX(shadowShear);      
     tint(0, 80); scale(1.02, 0.98); image(hourglassImg, 0, 0); pop();
 
-    // HOUSE RENDERING (BACK)
+    // HOUSE RENDERING
     push();
     let hY = lerp((houseIndex === 3 ? 30 : 10), (nextHouseIndex === 3 ? 30 : 10), transitionProgress / 255);
     translate(0, hY); scale(pulse * 0.043); 
     tint(255, 255 - transitionProgress); image(houseImages[houseIndex], 0, 0);
+    
+    // --- CHAOTIC ORGANIC FIRE FOR HOUSE 3 ---
+    if (houseIndex === 2) {
+        let fireSafetyFade = map(qProg, 0.18, 0.21, 1, 0, true); 
+        if (fireSafetyFade > 0) {
+            blendMode(ADD);
+            noStroke();
+            let fireZones = [
+                {id: 1, x: -350, y: -220, w: 1.0, h: 1.0}, // Left Wing
+                {id: 2, x: 350, y: -220, w: 1.0, h: 1.0},  // Right Wing
+                {id: 3, x: 0, y: 200, w: 2.5, h: 1.0}      // Interior Spill
+            ];
+            fireZones.forEach(z => {
+                let organicAlpha = getOrganicFireAlpha(z.id) * fireSafetyFade;
+                if (organicAlpha > 0) {
+                    let heat = noise(frameCount * 0.1, z.id * 10) * 35 + (bass * 0.35);
+                    for(let i=0; i<18; i++) {
+                        let s = map(i, 0, 18, 30, 450); 
+                        let a = map(i, 0, 18, 25, 0.5); 
+                        fill(255, 115, 35, (a + (heat * 0.1)) * organicAlpha);
+                        let jX = noise(i, frameCount * 0.13, z.id) * 35 - 17;
+                        let jY = noise(i + 44, frameCount * 0.13, z.id) * 35 - 17;
+                        ellipse(z.x + jX, z.y + jY, s * z.w, s * z.h);
+                    }
+                }
+            });
+        }
+    }
+
     if (transitionProgress > 0) { tint(255, transitionProgress); image(houseImages[nextHouseIndex], 0, 0); }
     pop();
 
-    // SAND RENDERING (FRONT)
+    // GRAIN SHADOWS
+    push(); resetMatrix(); 
+    tint(0, 85); image(shadowImg, width/2 + 5, height/2 + 5); image(topImg, width/2 + 4, height/2 + 4);
+    pop();
+
+    // SAND RENDERING
     push(); resetMatrix(); 
     image(sandImg, width/2, height/2);
     image(topImg, width/2, height/2);
@@ -237,6 +289,4 @@ function draw() {
     pop();
 }
 
-function windowResized() {
-    // Fixed size
-}
+function windowResized() { }
